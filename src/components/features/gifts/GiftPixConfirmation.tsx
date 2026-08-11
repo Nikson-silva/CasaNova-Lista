@@ -1,9 +1,6 @@
 "use client";
 
-import { GiftPixConfirmation } from "./GiftPixConfirmation";
-import { GiftPixPayment } from "./GiftPixPayment";
-import { GiftPresentOptions } from "./GiftPresentOptions";
-import { Gift as GiftIcon, MessageCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle, MessageCircle } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 
@@ -17,19 +14,33 @@ import type { ReservationRequest } from "@/schemas/reservation.schema";
 import type { Gift } from "@/types/gift";
 import type { ReservationInsert } from "@/types/reservation";
 
-type GiftConfirmationFormProps = {
-    gift: Pick<Gift, "id" | "name" | "estimated_price">;
+type GiftPixConfirmationProps = {
+    gift: Pick<Gift, "id" | "name">;
+    amount: number;
+    isFlexibleAmount?: boolean;
+    onBack: () => void;
 };
 
-type ReservationFormValues = Pick<ReservationRequest, "guest_name" | "message">;
+type PixConfirmationFormValues = Pick<ReservationRequest, "guest_name" | "message">;
 
 type SubmissionFeedback = {
     kind: "error" | "success";
     message: string;
 } | null;
 
-function createDefaultMessage(giftName: string): string {
-    return `Confirmo presença em seu chá de casa nova e irei lhes presentear com ${giftName}.`;
+function formatCurrency(value: number): string {
+    return value.toLocaleString("pt-BR", {
+        style: "currency",
+        currency: "BRL",
+    });
+}
+
+function createPixMessage(giftName: string, amount: number, isFlexibleAmount: boolean): string {
+    if (isFlexibleAmount) {
+        return `Confirmo presença em seu chá de casa nova e realizei um Pix no valor de ${formatCurrency(amount)} como presente.`;
+    }
+
+    return `Confirmo presença em seu chá de casa nova e realizei um Pix no valor de ${formatCurrency(amount)} referente ao presente ${giftName}.`;
 }
 
 function getSubmissionErrorMessage(error: unknown): string {
@@ -44,21 +55,12 @@ function getSubmissionErrorMessage(error: unknown): string {
     return "Não foi possível confirmar o presente. Tente novamente.";
 }
 
-export function GiftConfirmationForm({ gift }: GiftConfirmationFormProps) {
-    const [presentMethod, setPresentMethod] = useState<"item" | "pix" | null>(null);
-    const isFlexiblePixGift = gift.estimated_price === null;
-    /**
-     * Guarda o valor escolhido pelo convidado
-     * para o pagamento via Pix.
-     *
-     * Enquanto for null, o usuário ainda está
-     * na tela de geração do Pix.
-     *
-     * Quando receber um valor, avançamos para
-     * a tela de confirmação do Pix.
-     */
-    const [pixAmount, setPixAmount] = useState<number | null>(null);
-
+export function GiftPixConfirmation({
+    gift,
+    amount,
+    isFlexibleAmount = false,
+    onBack,
+}: GiftPixConfirmationProps) {
     const reserveGiftMutation = useReserveGift(gift.id);
 
     const [feedback, setFeedback] = useState<SubmissionFeedback>(null);
@@ -67,22 +69,16 @@ export function GiftConfirmationForm({ gift }: GiftConfirmationFormProps) {
         formState: { errors, isSubmitting },
         handleSubmit,
         register,
-    } = useForm<ReservationFormValues>({
+    } = useForm<PixConfirmationFormValues>({
         defaultValues: {
             guest_name: "",
-            message: createDefaultMessage(gift.name),
+            message: createPixMessage(gift.name, amount, isFlexibleAmount),
         },
     });
 
     const isSubmittingReservation = isSubmitting || reserveGiftMutation.isPending;
 
-    function handleBackToPresentOptions() {
-        setPresentMethod(null);
-        setPixAmount(null);
-        setFeedback(null);
-    }
-
-    async function submitReservation(values: ReservationFormValues) {
+    async function submitReservation(values: PixConfirmationFormValues) {
         if (isSubmittingReservation) {
             return;
         }
@@ -93,16 +89,30 @@ export function GiftConfirmationForm({ gift }: GiftConfirmationFormProps) {
 
         const message = values.message.trim();
 
-        const payload: ReservationInsert = {
-            gift_id: gift.id,
-            guest_name: guestName,
-            guest_phone: null,
-            message,
-        };
-
         try {
-            await reserveGiftMutation.mutateAsync(payload);
+            /*
+             * O Pix do Indeciso não representa um presente
+             * específico e, portanto, nunca deve criar uma
+             * reserva ou alterar o status do item.
+             *
+             * Presentes normais continuam utilizando
+             * exatamente o fluxo de reserva existente.
+             */
+            if (!isFlexibleAmount) {
+                const payload: ReservationInsert = {
+                    gift_id: gift.id,
+                    guest_name: guestName,
+                    guest_phone: null,
+                    message,
+                };
 
+                await reserveGiftMutation.mutateAsync(payload);
+            }
+
+            /*
+             * Tanto o presente normal quanto o Pix do
+             * Indeciso terminam abrindo o WhatsApp.
+             */
             const whatsappUrl = createWhatsAppUrl(message);
 
             if (whatsappUrl) {
@@ -113,7 +123,9 @@ export function GiftConfirmationForm({ gift }: GiftConfirmationFormProps) {
 
             setFeedback({
                 kind: "success",
-                message: "Presente confirmado. O destino do WhatsApp ainda não está configurado.",
+                message: isFlexibleAmount
+                    ? "Confirmação registrada. O destino do WhatsApp ainda não está configurado."
+                    : "Presente confirmado. O destino do WhatsApp ainda não está configurado.",
             });
         } catch (error) {
             setFeedback({
@@ -123,101 +135,53 @@ export function GiftConfirmationForm({ gift }: GiftConfirmationFormProps) {
         }
     }
 
-    /*
-     * Etapa inicial:
-     *
-     * O usuário escolhe se deseja:
-     *
-     * - Presentear com o item
-     * - Presentear via Pix
-     */
-    if (presentMethod === null) {
-        return (
-            <GiftPresentOptions
-                showItemOption={!isFlexiblePixGift}
-                onSelectItem={isFlexiblePixGift ? undefined : () => setPresentMethod("item")}
-                onSelectPix={() => setPresentMethod("pix")}
-            />
-        );
-    }
-
-    /*
-     * Fluxo Pix.
-     */
-    if (presentMethod === "pix") {
-        if (pixAmount !== null) {
-            return (
-                <GiftPixConfirmation
-                    gift={{
-                        id: gift.id,
-                        name: gift.name,
-                    }}
-                    amount={pixAmount}
-                    isFlexibleAmount={isFlexiblePixGift}
-                    onBack={() => {
-                        setPixAmount(null);
-                    }}
-                />
-            );
-        }
-
-        return (
-            <GiftPixPayment
-                giftName={gift.name}
-                estimatedPrice={gift.estimated_price}
-                isFlexibleAmount={isFlexiblePixGift}
-                onBack={handleBackToPresentOptions}
-                onPaymentConfirmed={(amount) => {
-                    setPixAmount(amount);
-                }}
-            />
-        );
-    }
-
-    /*
-     * Fluxo original de presente físico.
-     *
-     * Esta parte continua utilizando exatamente
-     * a mesma lógica de reserva que já funcionava.
-     */
     return (
         <Card className="rounded-none border-[#C6DDEA] p-6 shadow-[0_1px_5px_rgba(38,55,72,0.05)] lg:p-8">
             <button
                 type="button"
-                onClick={handleBackToPresentOptions}
-                className="mb-5 text-sm font-medium text-[#1682C0] transition-colors hover:text-[#126D9F] hover:underline"
+                onClick={onBack}
+                className="mb-5 inline-flex items-center gap-1.5 text-sm font-medium text-[#1682C0] transition-colors hover:text-[#126D9F] hover:underline"
             >
-                ← Voltar
+                <ArrowLeft aria-hidden="true" className="size-4" />
+                Voltar
             </button>
 
             <div className="flex items-center gap-2 text-[#263748]">
-                <GiftIcon aria-hidden="true" className="size-5 text-[#1682C0]" />
+                <CheckCircle aria-hidden="true" className="size-5 text-[#1682C0]" />
 
-                <h2 className="font-serif text-xl font-semibold">Confirmar presente</h2>
+                <h2 className="font-serif text-xl font-semibold">Pix realizado</h2>
             </div>
 
             <p className="mt-2 text-[13px] leading-5 text-[#627489]">
-                Caso queira confirmar o item que deseja nos presentear, envie uma mensagem de
-                confirmação.
+                Você informou um Pix de{" "}
+                <strong className="text-[#263748]">{formatCurrency(amount)}</strong>{" "}
+                {isFlexibleAmount ? (
+                    <>como presente para Nikson e Letícia.</>
+                ) : (
+                    <>
+                        referente ao presente{" "}
+                        <strong className="text-[#263748]">{gift.name}</strong>.
+                    </>
+                )}
             </p>
 
             <form className="mt-6" noValidate onSubmit={handleSubmit(submitReservation)}>
                 <label
-                    htmlFor="guest-name"
+                    htmlFor="pix-guest-name"
                     className="text-[12px] font-semibold uppercase text-[#263748]"
                 >
                     Nome completo <span className="text-[#DC2626]">*</span>
                 </label>
 
                 <Input
-                    id="guest-name"
+                    id="pix-guest-name"
                     type="text"
                     required
                     autoComplete="name"
                     placeholder="Digite seu nome completo"
                     disabled={isSubmittingReservation}
                     aria-invalid={Boolean(errors.guest_name)}
-                    aria-describedby={errors.guest_name ? "guest-name-error" : undefined}
+                    aria-describedby={errors.guest_name ? "pix-guest-name-error" : undefined}
                     className="mt-1.5 h-12 rounded-[4px] border-[#B9D7E7] bg-[#F8FBFD] px-4 text-[15px]"
                     {...register("guest_name", {
                         required: "Informe seu nome completo.",
@@ -232,13 +196,17 @@ export function GiftConfirmationForm({ gift }: GiftConfirmationFormProps) {
                 />
 
                 {errors.guest_name ? (
-                    <p id="guest-name-error" role="alert" className="mt-1.5 text-sm text-[#B91C1C]">
+                    <p
+                        id="pix-guest-name-error"
+                        role="alert"
+                        className="mt-1.5 text-sm text-[#B91C1C]"
+                    >
                         {errors.guest_name.message}
                     </p>
                 ) : null}
 
                 <label
-                    htmlFor="confirmation-message"
+                    htmlFor="pix-confirmation-message"
                     className="mt-4 block text-[12px] font-semibold uppercase text-[#263748]"
                 >
                     Mensagem de confirmação
@@ -246,13 +214,11 @@ export function GiftConfirmationForm({ gift }: GiftConfirmationFormProps) {
 
                 <Textarea
                     required
-                    id="confirmation-message"
+                    id="pix-confirmation-message"
                     disabled={isSubmittingReservation}
                     aria-invalid={Boolean(errors.message)}
                     aria-describedby={
-                        errors.message
-                            ? "confirmation-message-error confirmation-message-help"
-                            : "confirmation-message-help"
+                        errors.message ? "pix-message-error pix-message-help" : "pix-message-help"
                     }
                     className="mt-1.5 min-h-24 rounded-[4px] border-[#B9D7E7] bg-[#F8FBFD] px-4 py-3 text-[15px] leading-6 text-[#263748]"
                     {...register("message", {
@@ -269,7 +235,7 @@ export function GiftConfirmationForm({ gift }: GiftConfirmationFormProps) {
 
                 {errors.message ? (
                     <p
-                        id="confirmation-message-error"
+                        id="pix-message-error"
                         role="alert"
                         className="mt-1.5 text-sm text-[#B91C1C]"
                     >
@@ -277,7 +243,7 @@ export function GiftConfirmationForm({ gift }: GiftConfirmationFormProps) {
                     </p>
                 ) : null}
 
-                <p id="confirmation-message-help" className="mt-2 text-[13px] text-[#627489]">
+                <p id="pix-message-help" className="mt-2 text-[13px] text-[#627489]">
                     Você pode editar a mensagem antes de enviar.
                 </p>
 
@@ -301,11 +267,13 @@ export function GiftConfirmationForm({ gift }: GiftConfirmationFormProps) {
                     className="mt-5 h-12 w-full rounded-[4px] bg-[#2D89BD] text-white hover:bg-[#2478A7]"
                 >
                     <MessageCircle aria-hidden="true" className="size-4" />
-                    Enviar mensagem pelo WhatsApp
+                    Enviar confirmação pelo WhatsApp
                 </LoadingButton>
 
                 <p className="mt-3 text-center text-[12px] leading-5 text-[#627489]">
-                    O WhatsApp será aberto com a mensagem preenchida após a confirmação.
+                    {isFlexibleAmount
+                        ? "O WhatsApp será aberto com a mensagem preenchida. O Pix do Indeciso permanece disponível para outros convidados."
+                        : "Ao confirmar, o presente será reservado e o WhatsApp será aberto com a mensagem."}
                 </p>
             </form>
         </Card>
