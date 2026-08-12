@@ -57,7 +57,7 @@ function GiftImage({ gift }: { gift: Gift }) {
         <img
           src={imageUrl}
           alt={gift.name}
-          className="size-full object-cover"
+          className="size-full bg-white object-contain"
         />
       ) : (
         <div className="flex size-full items-center justify-center">

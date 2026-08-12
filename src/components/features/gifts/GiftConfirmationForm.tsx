@@ -201,6 +201,23 @@ export function GiftConfirmationForm({ gift }: GiftConfirmationFormProps) {
                 confirmação.
             </p>
 
+            <div className="mt-5 rounded-lg border border-[#C6DDEA] bg-[#F8FBFD] p-4">
+                <p className="text-sm font-semibold text-[#263748]">📦 Endereço para entrega</p>
+
+                <p className="mt-2 text-sm leading-6 text-[#627489]">
+                    Caso prefira comprar o presente pela internet, você pode utilizar nosso endereço
+                    para a entrega:
+                </p>
+
+                <address className="mt-2 not-italic text-sm font-medium leading-6 text-[#263748]">
+                    Rua João Tamanduá, nº 274
+                    <br />
+                    Bairro Três Irmãs
+                    <br />
+                    CEP: 58423-380
+                </address>
+            </div>
+
             <form className="mt-6" noValidate onSubmit={handleSubmit(submitReservation)}>
                 <label
                     htmlFor="guest-name"

@@ -62,9 +62,9 @@ export function GiftCard({
             alt={gift.name}
             loading="lazy"
             className={cn(
-              "size-full object-cover transition-[filter,opacity]",
-              !isAvailable && "grayscale-[35%] opacity-80",
-            )}
+  "size-full bg-white object-contain transition-[filter,opacity]",
+  !isAvailable && "grayscale-[35%] opacity-80",
+)}
           />
         ) : (
           <div className="flex size-full items-center justify-center">
