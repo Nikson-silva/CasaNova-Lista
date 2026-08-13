@@ -22,7 +22,7 @@ export function InvitationInfo() {
     return (
         <div className="flex flex-col gap-3.5 lg:gap-5 font-[Georgia]">
             <InfoItem icon={<CalendarDays aria-hidden="true" className="size-4" />} label="Data">
-                Domingo, 11 de outubro de 2026
+                Domingo, 03 de outubro de 2026
             </InfoItem>
 
             <InfoItem icon={<Clock3 aria-hidden="true" className="size-4" />} label="Horário">
